@@ -9,7 +9,7 @@ import numpy as np
 from pytorch3d import io
 from pytorch3d.structures import Meshes, Pointclouds
 from pytorch3d.renderer import TexturesUV
-
+from pytorch3d.transforms import RotateAxisAngle
 
 def load_config(config_path):
     with open(config_path, 'r') as fp:
@@ -20,6 +20,34 @@ def load_config(config_path):
 
     return config
 
+def normalize_v(V):
+    #V = np.array(V)
+    #V = (V-(V.max(0)+V.min(0))*0.5)/max(V.max(0)-V.min(0))
+    #V = (V-(V.max(0).values + V.min(0).values) * 0.5)/max(V.max(0).values - V.min(0).values)
+    V = (V-(V.max(0).values + V.min(0).values) * 0.5)/max(V.max(0).values - V.min(0).values)
+
+    #V = V - V.min(0).values[1]
+    #V = V / V.max(0).values[1]
+    V = V * 2.0
+    #V = V * 0.8 # rescale
+    return V
+
+def normalize_v_np(V):
+    V = (V-(V.max(0)+V.min(0))*0.5) / max(V.max(0)-V.min(0))
+    #V = V - V.min(0)[1]
+    #V = V / V.max(0)[1]
+    V = V * 2.0
+    #V = V * 0.8
+    return V
+
+def y_rotation(angle):
+    angle = np.pi * angle / 180.0
+    c, s = np.cos(angle), np.sin(angle)
+    R = np.array([[   c,       0.0,          s,        0.0],
+                  [ 0.0,       1.0,        0.0,        0.0],
+                  [  -s,       0.0,          c,        0.0],
+                  [ 0.0,       0.0,        0.0,        1.0]], dtype=np.float32)
+    return R
 
 def load_data(input_path: Path, device: torch.device = "cpu", texture_path: Path = None):
     data = trimesh.load(input_path, process=False)
@@ -37,6 +65,13 @@ def load_data(input_path: Path, device: torch.device = "cpu", texture_path: Path
             # had to use pytorch3d loading instead of trimesh, because
             # the latter doesn't fully parse faces texture indexes
             verts, faces, aux = io.load_obj(input_path)
+            
+            ### normalize mesh
+            verts = normalize_v(verts)
+            
+            ### rotate mesh
+            #rot = RotateAxisAngle(180, 'Y')            
+            
             texture = None
             if texture_path is not None:
                 if texture_path.is_file():
@@ -53,7 +88,7 @@ def load_data(input_path: Path, device: torch.device = "cpu", texture_path: Path
                     texture = TexturesUV(verts_uvs=verts_uvs, faces_uvs=faces_uvs, maps=texture_image)
                 else:
                     Warning("No texture file found for provided .obj scan")
-
+             
             # Initialise the mesh
             input_data = Meshes(verts=[verts], faces=[faces.verts_idx], textures=texture).to(device)
         elif suffix == '.ply':
