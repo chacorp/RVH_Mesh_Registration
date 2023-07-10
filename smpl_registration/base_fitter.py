@@ -5,9 +5,9 @@ this can be inherited for fitting smplh, smph+d to scan, kinect point clouds etc
 Author: Xianghui, 12, January 2022
 """
 import torch
-from os.path import join, split, splitext
+from os.path import join, split, splitext, basename
 from pytorch3d.structures import Meshes
-from pytorch3d.io import save_ply, load_ply, load_obj
+from pytorch3d.io import save_ply, save_obj, load_ply, load_obj
 import pickle as pkl
 import numpy as np
 import json
@@ -17,6 +17,7 @@ from lib.smpl.priors.th_smpl_prior import get_prior
 from lib.smpl.wrapper_pytorch import SMPLPyTorchWrapperBatch
 from lib.smpl.const import *
 
+from utils.keypoints_3d_estimation.io import normalize_v
 
 class BaseFitter(object):
     def __init__(self, model_root, device='cuda:0', save_name='smpl', debug=False, hands=True):
@@ -151,7 +152,7 @@ class BaseFitter(object):
                        }
         return loss_weight
 
-    def save_outputs(self, save_path, scan_paths, smpl, th_scan_meshes, save_name='smpl'):
+    def save_outputs(self, save_path, scan_paths, smpl, th_scan_meshes, save_name='smpl', smpl_org=None):
         th_smpl_meshes = self.smpl2meshes(smpl)
         mesh_paths, names = self.get_mesh_paths(save_name, save_path, scan_paths)
         self.save_meshes(th_smpl_meshes, mesh_paths)
@@ -172,19 +173,38 @@ class BaseFitter(object):
         mesh_paths = []
         for n in names:
             if n.endswith('.obj'):
-                mesh_paths.append(join(save_path, n.replace('.obj', f'_{save_name}.ply')))
+                mesh_paths.append(join(save_path, n.replace('.ply', f'_{save_name}.ply')))
+#                 mesh_paths.append(join(save_path, n.replace('.obj', f'_{save_name}.obj')))
             else:
                 mesh_paths.append(join(save_path, n.replace('.ply', f'_{save_name}.ply')))
         return mesh_paths, names
 
+#     def save_smpl_params(self, names, save_path, smpl, save_name):
+#         for p, b, t, n in zip(smpl.pose.cpu().detach().numpy(), smpl.betas.cpu().detach().numpy(),
+#                               smpl.trans.cpu().detach().numpy(), names):
+#             smpl_dict = {'pose': p, 'betas': b, 'trans': t}
+#             sfx = splitext(n)[1]
+#             pkl_file = join(save_path, n.replace(sfx, f'_{save_name}.pkl'))
+#             pkl.dump(smpl_dict, open(pkl_file, 'wb'))
+#             print('SMPL parameters saved to', pkl_file)
+            
     def save_smpl_params(self, names, save_path, smpl, save_name):
-        for p, b, t, n in zip(smpl.pose.cpu().detach().numpy(), smpl.betas.cpu().detach().numpy(),
-                              smpl.trans.cpu().detach().numpy(), names):
+        for p, b, t, d, n in zip(smpl.pose.cpu().detach().numpy(), smpl.betas.cpu().detach().numpy(),
+                              smpl.trans.cpu().detach().numpy(), smpl.offsets.cpu().detach().numpy(), names):
             smpl_dict = {'pose': p, 'betas': b, 'trans': t}
             sfx = splitext(n)[1]
             pkl_file = join(save_path, n.replace(sfx, f'_{save_name}.pkl'))
             pkl.dump(smpl_dict, open(pkl_file, 'wb'))
             print('SMPL parameters saved to', pkl_file)
+            
+            # save as json
+            import json
+            smpl_dict = {'pose': p.tolist(), 'betas': b.tolist(), 'trans': t.tolist(), 'disp': d.tolist()}
+            sfx = splitext(n)[1]
+            json_file = join(save_path, n.replace(sfx, f'_{save_name}.json'))
+            with open(json_file, 'w') as outfile:
+                json.dump(smpl_dict, outfile, indent=4)
+            print('>>> SMPL parameters saved to', json_file)
 
     @staticmethod
     def backward_step(loss_dict, weight_dict, it):
@@ -200,7 +220,12 @@ class BaseFitter(object):
     def save_meshes(meshes, save_paths):
         print('Mesh saved at', save_paths[0])
         for m, s in zip(meshes, save_paths):
-            save_ply(s, m.verts_list()[0].cpu(), m.faces_list()[0].cpu())
+            ext = basename(s).split(".")[-1]
+            print(f"\t extension: {ext}")
+            if ext == "ply":
+                save_ply(s, m.verts_list()[0].cpu(), m.faces_list()[0].cpu())
+            else:
+                save_obj(s, m.verts_list()[0].cpu(), m.faces_list()[0].cpu())
 
     def load_j3d(self, pose_files):
         """
@@ -229,6 +254,7 @@ class BaseFitter(object):
             else:
                 v, f, _ = load_obj(scan)
                 f = f[0]  # see pytorch3d doc
+            v = normalize_v(v)
             verts.append(v)
             faces.append(f)
             centers.append(torch.mean(v, 0))
