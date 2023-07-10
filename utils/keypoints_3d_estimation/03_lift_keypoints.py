@@ -10,7 +10,7 @@ import argparse
 import pickle as pkl
 from pathlib import Path
 
-import tqdm
+from tqdm import tqdm
 import trimesh
 import numpy as np
 import torch
@@ -22,6 +22,7 @@ from lib.smpl.wrapper_pytorch import SMPLPyTorchWrapperBatch
 from lib.smpl.priors.th_smpl_prior import get_prior
 from utils.configs import load_config
 
+from utils.keypoints_3d_estimation.io import normalize_v_np
 
 def initialize_keypoints_3d(centers, num, smpl_models_path, device="cpu"):
     # load 25 keypoints from SMPL
@@ -30,8 +31,10 @@ def initialize_keypoints_3d(centers, num, smpl_models_path, device="cpu"):
     batch_sz = centers.shape[0]
     pose_init = torch.zeros((batch_sz, 72))
     pose_init[:, 3:3+prior.mean.shape[-1]] = prior.mean
-    betas, pose, trans = torch.zeros((batch_sz, 300)), pose_init, centers  # init SMPL with the translation
-
+    # betas, pose, trans = torch.zeros((batch_sz, 300)), pose_init, centers  # init SMPL with the translation
+    betas, pose, trans = torch.zeros((batch_sz, 10)), pose_init, centers  # init SMPL with the translation
+    
+    #import pdb;pdb.set_trace()
     smpl = SMPLPyTorchWrapperBatch(smpl_models_path, batch_sz, betas, pose, trans).to(device)
     J, face, hands = smpl.get_landmarks()
 
@@ -117,8 +120,19 @@ def main(args):
 
     # Load scan to pose SMPL model
     data = trimesh.load(args.input_path, process=False)
-    center = np.array(data.vertices.mean(0))[np.newaxis]
-    centers = torch.tensor(center, device=device, dtype=torch.float)
+    
+    #center = np.array(data.vertices.mean(0))[np.newaxis]
+    #centers = torch.tensor(center, device=device, dtype=torch.float)
+    
+    ### normalize and get center
+    #import pdb; pdb.set_trace()
+    data.vertices = normalize_v_np(data.vertices)
+    
+    x_cen = (data.vertices[:,0].min() + data.vertices[:,0].max()) * 0.5
+    y_cen = (data.vertices[:,1].min() + data.vertices[:,1].max()) * 0.5
+    z_cen = (data.vertices[:,2].min() + data.vertices[:,2].max()) * 0.5
+    
+    centers = torch.tensor([[x_cen, y_cen, z_cen]], device=device, dtype=torch.float)
 
     # Initialize 3d pose from SMPL
     keypoints_3d = initialize_keypoints_3d(centers, keypoints_num, args.smpl_models_path, device)
@@ -138,14 +152,36 @@ def main(args):
     iterations, steps_per_iter = 100, 30
     # iterations, steps_per_iter = 1, 1
 
-    for it in tqdm.tqdm(range(iterations)):
+    import torchvision
+    loop = tqdm(range(iterations))
+    for it in loop:
         for i in range(steps_per_iter):
             optimizer.zero_grad()
             # Get losses for a forward pass
-            loss, _ = batch_reprojection_loss_vcam(keypoints_2d[:, :keypoints_num], keypoints_3d, cameras, image_size)
+            #loss, _ = batch_reprojection_loss_vcam(keypoints_2d[:, :keypoints_num], keypoints_3d, cameras, image_size)
+            loss, proj = batch_reprojection_loss_vcam(keypoints_2d[:, :keypoints_num], keypoints_3d, cameras, image_size)
+#             import pdb;pdb.set_trace()
+            
+#             image_empty = torch.zeros((3,512,512),dtype=torch.uint8)
+#             torchvision.transforms.ToPILImage()(draw_keypoints(image_empty, proj[i], colors="blue", radius=3)).save('test_{:03d}.png'.format(i))
+            
+#             torchvision.transforms.ToPILImage()(draw_keypoints(image_empty, keypoints_2d[:,:,i*3:i*3+2], colors="blue", radius=3)).save('test_img_{:03d}.png'.format(i))
+            
+            
+#             smpl_joints_proj_xy = cameras[0].transform_points_screen(keypoints_3d, image_size=image_size)[:, :, :2]
+#             torchvision.transforms.ToPILImage()(draw_keypoints(image_empty, smpl_joints_proj_xy[:,:25], colors="blue", radius=3)).save('test_smpl_{:03d}.png'.format(i))
+            
             loss.backward()
             optimizer.step()
-
+        
+        
+        l_str = 'loss: {:0.4f}'.format(loss.mean().item())
+        loop.set_description(l_str)
+#     import pdb;pdb.set_trace()
+#     image_empty = torch.zeros((3,512,512),dtype=torch.uint8)
+#     for i in range(10):        
+#         torchvision.transforms.ToPILImage()(draw_keypoints(image_empty, proj[i], colors="blue", radius=3)).save('test_{:03d}.png'.format(i))
+    
     # Save results
     res = keypoints_3d.cpu().detach().numpy()
     conf = compute_j3d_confidence(keypoints_2d.cpu().detach().numpy())
@@ -153,6 +189,77 @@ def main(args):
     args.results_path.parent.mkdir(parents=True, exist_ok=True)
     with args.results_path.open('w') as fp:
         json.dump(res[0].tolist(), fp, indent=4)
+        
+@torch.no_grad()
+def draw_keypoints(
+    image,
+    keypoints,
+    connectivity = None,
+    colors= None,
+    radius= 2,
+    width= 3,
+    ):
+
+    """
+    Draws Keypoints on given RGB image.
+    The values of the input image should be uint8 between 0 and 255.
+
+    Args:
+        image (Tensor): Tensor of shape (3, H, W) and dtype uint8.
+        keypoints (Tensor): Tensor of shape (num_instances, K, 2) the K keypoints location for each of the N instances,
+            in the format [x, y].
+        connectivity (List[Tuple[int, int]]]): A List of tuple where,
+            each tuple contains pair of keypoints to be connected.
+        colors (str, Tuple): The color can be represented as
+            PIL strings e.g. "red" or "#FF00FF", or as RGB tuples e.g. ``(240, 10, 157)``.
+        radius (int): Integer denoting radius of keypoint.
+        width (int): Integer denoting width of line connecting keypoints.
+
+    Returns:
+        img (Tensor[C, H, W]): Image Tensor of dtype uint8 with keypoints drawn.
+    """
+    from PIL import Image, ImageColor, ImageDraw, ImageFont
+#     if not torch.jit.is_scripting() and not torch.jit.is_tracing():
+#         _log_api_usage_once(draw_keypoints)
+#     if not isinstance(image, torch.Tensor):
+#         raise TypeError(f"The image must be a tensor, got {type(image)}")
+#     elif image.dtype != torch.uint8:
+#         raise ValueError(f"The image dtype must be uint8, got {image.dtype}")
+#     elif image.dim() != 3:
+#         raise ValueError("Pass individual images, not batches")
+#     elif image.size()[0] != 3:
+#         raise ValueError("Pass an RGB image. Other Image formats are not supported")
+
+#     if keypoints.ndim != 3:
+#         raise ValueError("keypoints must be of shape (num_instances, K, 2)")
+
+    ndarr = image.permute(1, 2, 0).cpu().numpy()
+    img_to_draw = Image.fromarray(ndarr)
+    draw = ImageDraw.Draw(img_to_draw)
+    img_kpts = keypoints.to(torch.int64).tolist()
+
+    for kpt_id, kpt_inst in enumerate(img_kpts):
+        for inst_id, kpt in enumerate(kpt_inst):
+            x1 = kpt[0] - radius
+            x2 = kpt[0] + radius
+            y1 = kpt[1] - radius
+            y2 = kpt[1] + radius
+            draw.ellipse([x1, y1, x2, y2], fill=colors, outline=None, width=0)
+
+        if connectivity:
+            for connection in connectivity:
+                start_pt_x = kpt_inst[connection[0]][0]
+                start_pt_y = kpt_inst[connection[0]][1]
+
+                end_pt_x = kpt_inst[connection[1]][0]
+                end_pt_y = kpt_inst[connection[1]][1]
+
+                draw.line(
+                    ((start_pt_x, start_pt_y), (end_pt_x, end_pt_y)),
+                    width=width,
+                )
+
+    return torch.from_numpy(np.array(img_to_draw)).permute(2, 0, 1).to(dtype=torch.uint8)
 
 
 if __name__ == "__main__":

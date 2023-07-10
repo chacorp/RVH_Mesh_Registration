@@ -49,8 +49,11 @@ def filter_background_detections(detections):
 def main(args):
     # custom params for the model (refer to include/openpose/flags.hpp for more parameters)
     op_params = dict()
-    op_params["model_folder"] = "/openpose/models/"
-    op_params["net_resolution"] = "720x480"
+    # op_params["model_folder"] = "/openpose/models/"
+    op_params["model_folder"] = "openpose/models/"
+    # op_params["net_resolution"] = "720x480" #16*5*9 x 16*5*6
+    # op_params["net_resolution"] = "512x320" # 16*4*8 x 16*4*5
+    op_params["net_resolution"] = "320x160" # 16*4*8 x 16*4*5
     op_params["scale_number"] = 3
     op_params["scale_gap"] = 0.25
     op_params.update(preset_params(args))

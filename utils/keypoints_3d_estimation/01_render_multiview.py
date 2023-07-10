@@ -108,6 +108,14 @@ def get_center(input_data: Union[Meshes, Pointclouds]):
         RuntimeError(f"Unsupported input type {type(input_data)}")
 
     center = vertices_list.mean(0)
+    
+#     import pdb;pdb.set_trace()
+#     x_cen = (vertices_list[:,0].min() + vertices_list[:,0].max()) * 0.5
+#     y_cen = (vertices_list[:,1].min() + vertices_list[:,1].max()) * 0.5
+#     z_cen = (vertices_list[:,2].min() + vertices_list[:,2].max()) * 0.5
+    
+#     center = torch.tensor([x_cen,y_cen,z_cen]).to(vertices_list)
+    
     return torch.unsqueeze(center, 0)
 
 
@@ -121,7 +129,7 @@ def main(args):
 
     # Load data
     input_type, input_data = load_data(args.input_path, device, args.texture_path)
-
+    
     # Get center location (to control camera orientation)
     center = get_center(input_data)
 
