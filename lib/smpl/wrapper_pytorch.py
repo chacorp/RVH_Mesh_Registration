@@ -75,7 +75,8 @@ class SMPLPyTorchWrapperBatch(nn.Module):
                                   th_betas=self.betas,
                                   th_trans=self.trans,
                                   th_offsets=self.offsets)
-
+        # import pdb;pdb.set_trace()
+        # -1 ~ 1
         J = batch_sparse_dense_matmul(self.body25_reg_torch, verts)
         face = batch_sparse_dense_matmul(self.face_reg_torch, verts)
         hands = batch_sparse_dense_matmul(self.hand_reg_torch, verts)
