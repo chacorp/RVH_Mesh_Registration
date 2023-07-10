@@ -26,6 +26,8 @@ We provide various methods for registering SMPL or SMPL+H to scans or point clou
 3. [Fit SMPL(H) to point clouds](#fit-smplh-pc)
 4. [Fit SMPL(H)+D to point clouds using IP-Net](#fit-smplh-pc-ipnet)
 
+5. [get displacement in UV format](#get-displacement)
+
 The default model we use is SMPL. In all the following scripts, you can switch to SMPL-H model by adding a command option `-hands`. 
 
 ### <a name="fit-smplh"></a> Fit SMPL(H) to scans
@@ -86,6 +88,25 @@ Example command using our sample data:
 ```angular2html
 python smpl_registration/fit_SMPLH_IPNet.py data/mesh_1/scan.obj data/mesh_1 -w CHECKPOINT_PATH
 ```
+
+
+
+### <a name="get-displacement"></a> Get Displacement in SMPL UV format
+This code converts displacements from the fitted mesh in an UV form.
+```
+python render_smpl_displacement.py [-org original_smpl_ply] [-reg register_smpl_ply]
+[-p smpl_parms (optional)] [-s save_path (optional)]
+```
+Example command using our sample data:
+```angular2html
+python render_smpl_displacement.py \
+    -org data/mesh_1/scan_original.ply \
+    -reg data/mesh_1/scan_smpld.ply \
+    -s data/mesh_1    
+```
+
+
+
 
 ## Cite us:
 If you use this code please cite: </br>
