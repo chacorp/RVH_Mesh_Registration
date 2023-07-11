@@ -28,7 +28,7 @@ class BaseFitter(object):
         self.hands = hands
         self.save_name_base = 'smplh' if hands else 'smpl'
         if debug:
-            self.mv = MeshViewer(window_width=512, window_height=512)
+            self.mv = MeshViewer()
         if self.hands:
             print("Using SMPL-H model for registration")
         else:
@@ -152,9 +152,10 @@ class BaseFitter(object):
                        }
         return loss_weight
 
-    def save_outputs(self, save_path, scan_paths, smpl, th_scan_meshes, save_name='smpl', smpl_org=None):
+    def save_outputs(self, save_path, scan_paths, smpl, th_scan_meshes, save_name='smpl'):
         th_smpl_meshes = self.smpl2meshes(smpl)
         mesh_paths, names = self.get_mesh_paths(save_name, save_path, scan_paths)
+        print(mesh_paths)
         self.save_meshes(th_smpl_meshes, mesh_paths)
         # self.save_meshes(th_scan_meshes, [join(save_path, n) for n in names]) # save original scans
         # Save params
@@ -173,7 +174,7 @@ class BaseFitter(object):
         mesh_paths = []
         for n in names:
             if n.endswith('.obj'):
-                mesh_paths.append(join(save_path, n.replace('.ply', f'_{save_name}.ply')))
+                mesh_paths.append(join(save_path, n.replace('.obj', f'_{save_name}.ply')))
 #                 mesh_paths.append(join(save_path, n.replace('.obj', f'_{save_name}.obj')))
             else:
                 mesh_paths.append(join(save_path, n.replace('.ply', f'_{save_name}.ply')))
@@ -191,11 +192,11 @@ class BaseFitter(object):
     def save_smpl_params(self, names, save_path, smpl, save_name):
         for p, b, t, d, n in zip(smpl.pose.cpu().detach().numpy(), smpl.betas.cpu().detach().numpy(),
                               smpl.trans.cpu().detach().numpy(), smpl.offsets.cpu().detach().numpy(), names):
-            smpl_dict = {'pose': p, 'betas': b, 'trans': t}
-            sfx = splitext(n)[1]
-            pkl_file = join(save_path, n.replace(sfx, f'_{save_name}.pkl'))
-            pkl.dump(smpl_dict, open(pkl_file, 'wb'))
-            print('SMPL parameters saved to', pkl_file)
+#             smpl_dict = {'pose': p, 'betas': b, 'trans': t}
+#             sfx = splitext(n)[1]
+#             pkl_file = join(save_path, n.replace(sfx, f'_{save_name}.pkl'))
+#             pkl.dump(smpl_dict, open(pkl_file, 'wb'))
+#             print('SMPL parameters saved to', pkl_file)
             
             # save as json
             import json
