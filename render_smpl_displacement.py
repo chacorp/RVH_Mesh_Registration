@@ -377,13 +377,14 @@ def set_seed(seed):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def render_dispmap(args):
+def main(args):
     # CUDA
     device       = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     image_size   = 512
     
     save_path    = args.save_path
-    ### icon registered mesh
+    
+    ### scan fitted/registered mesh
     orign_verts, orign_faces = load_ply(args.register_smpl_ply)
     orign_meshes = Meshes(verts=[orign_verts], faces=[orign_faces]).to(device)
 
@@ -406,9 +407,7 @@ def render_dispmap(args):
     # tex_map      = TexturesUV(verts_uvs=[verts_uvs], faces_uvs=[faces_uvs], maps=tex_map)
     
     ### Mask
-    # pil_mask     = Image.open('./assets/mask.png')
     pil_mask     = Image.open('mask_soft.png')
-    # np_mask      = np.array(pil_mask) / 255.0
     mask         = tv.transforms.ToTensor()(pil_mask)
     mask         = mask.permute(1,2,0)[None].to(device)[..., :3]
     mask         = TexturesUV(verts_uvs=[verts_uvs], faces_uvs=[faces_uvs], maps=mask)
@@ -416,10 +415,10 @@ def render_dispmap(args):
     vert_mask[orign_meshes.faces_packed()] = mask.faces_verts_textures_packed()
     
     ### calculate displacement
-    icon         = smpld_meshes._verts_list[0]
+    scan         = smpld_meshes._verts_list[0]
     smpl         = orign_meshes._verts_list[0]
     
-    displacement = (icon - smpl) * vert_mask
+    displacement = (scan - smpl) * vert_mask
     
     ### Add displacement to mesh
     orign_meshes._verts_list[0] = smpl + displacement
@@ -443,7 +442,7 @@ def render_dispmap(args):
     
     import json
     import os
-    basename = os.path.basename(args.smpl_parms)[:-5]+".json"
+    basename = os.path.basename(args.smpl_parms)[:-5]+"_disp.json"
     # shutil.copy(args.smpl_parms, f"./results/{basename}")
     
     with open(args.smpl_parms,'r+') as outfile:
@@ -462,7 +461,7 @@ def render_dispmap(args):
         outfile.seek(0)
         
         # convert back to json.        
-        with open( f"{save_path}/{basename}_disp", 'w') as final_file:
+        with open( f"{save_path}/{basename}", 'w') as final_file:
             json.dump(file_data, final_file, indent = 4)
         
                                          
@@ -521,7 +520,7 @@ def blur_padding(np_image, np_mask, kernel_size=3, iteration=24):
     mask  = np_mask
     
     # erode mask
-    erode_mask = cv2.erode(mask, kernel, iterations=5)  # make dilation image        
+    erode_mask = cv2.erode(mask, kernel, iterations=3)  # make dilation image        
     erode_mask = erode_mask[...,np.newaxis]
     erode_mask = mask
     
@@ -570,11 +569,11 @@ def blur_padding(np_image, np_mask, kernel_size=3, iteration=24):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Run Model')
-    parser.add_argument('--original_smpl_ply', type=str, default='./prev_results/07_refine_smpl.ply')
-    parser.add_argument('--register_smpl_ply', type=str, default='./prev_results/07_refine_smpld.ply')
-    parser.add_argument('--smpl_parms',        type=str, default='./prev_results/07_refine_smpld_.json')
-    parser.add_argument('--save_path','-s',    type=str, help='save path')
+    parser.add_argument('--original_smpl_ply', '-org', type=str, default='./prev_results/07_refine_smpl.ply')
+    parser.add_argument('--register_smpl_ply', '-reg', type=str, default='./prev_results/07_refine_smpld.ply')
+    parser.add_argument('--smpl_parms', '-p',          type=str, default='./prev_results/07_refine_smpld_.json')
+    parser.add_argument('--save_path', '-s',           type=str, help='save path')
     args = parser.parse_args()
 
-    render_dispmap(args)
+    main(args)
             
