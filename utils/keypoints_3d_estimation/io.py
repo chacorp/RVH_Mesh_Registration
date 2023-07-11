@@ -50,6 +50,7 @@ def y_rotation(angle):
     return R
 
 def load_data(input_path: Path, device: torch.device = "cpu", texture_path: Path = None):
+    print(input_path)
     data = trimesh.load(input_path, process=False)
     if isinstance(data, trimesh.points.PointCloud):
         input_type = "pointcloud"
